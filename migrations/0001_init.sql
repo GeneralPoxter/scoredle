@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS scoredle_sync_state (
     guild_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
     game TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
     last_synced_message_id TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (guild_id, channel_id, game)

@@ -1,18 +1,19 @@
 import { AutoRouter, error, json, type IRequest } from 'itty-router';
 import { verifyKey } from 'discord-interactions';
 import {
+    APIInteraction,
     ApplicationCommandType,
     InteractionResponseType,
     InteractionType,
     type APIInteractionResponse,
-    type APIPingInteraction,
 } from 'discord-api-types/v10';
-import { executeCommand, type ApplicationCommandInteraction } from './commands';
+
 import { syncDiscordMessages } from './sync';
+import { executeCommand, type ApplicationCommandInteraction } from './commands';
+import { CONFIG_SELECT_ID, handleConfigSelect } from './commands/config';
+import { handleGameAutocomplete } from './commands/utils';
 
-type VerifiedInteraction = APIPingInteraction | ApplicationCommandInteraction;
-
-async function verifyDiscordRequest(request: Request, env: Env): Promise<VerifiedInteraction | null> {
+async function verifyDiscordRequest(request: Request, env: Env): Promise<APIInteraction | null> {
     const signature = request.headers.get('x-signature-ed25519');
     const timestamp = request.headers.get('x-signature-timestamp');
 
@@ -23,7 +24,7 @@ async function verifyDiscordRequest(request: Request, env: Env): Promise<Verifie
     const body = await request.text();
     const isValid = await verifyKey(body, signature, timestamp, env.DISCORD_PUBLIC_KEY);
 
-    return isValid ? (JSON.parse(body) as VerifiedInteraction) : null;
+    return isValid ? (JSON.parse(body) as APIInteraction) : null;
 }
 
 const router = AutoRouter<IRequest, [Env]>();
@@ -44,8 +45,24 @@ router.post('/', async (request, env) => {
         } satisfies APIInteractionResponse);
     }
 
-    if (interaction.type === InteractionType.ApplicationCommand && interaction.data.type === ApplicationCommandType.ChatInput) {
-        const response = await executeCommand(interaction, env);
+    if (
+        interaction.type === InteractionType.ApplicationCommand &&
+        interaction.data.type === ApplicationCommandType.ChatInput
+    ) {
+        const response = await executeCommand(interaction as ApplicationCommandInteraction, env);
+        return json(response);
+    }
+
+    if (interaction.type === InteractionType.ApplicationCommandAutocomplete) {
+        const response = await handleGameAutocomplete(interaction, env);
+        return json(response);
+    }
+
+    if (
+        interaction.type === InteractionType.MessageComponent &&
+        interaction.data.custom_id === CONFIG_SELECT_ID
+    ) {
+        const response = await handleConfigSelect(interaction, env);
         return json(response);
     }
 
@@ -57,7 +74,11 @@ router.all('*', () => error(404));
 export default {
     fetch: router.fetch,
 
-    async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
-        await syncDiscordMessages(env);
+    async scheduled(
+        _controller: ScheduledController,
+        env: Env,
+        ctx: ExecutionContext,
+    ): Promise<void> {
+        ctx.waitUntil(syncDiscordMessages(env));
     },
-};
+} satisfies ExportedHandler<Env>;

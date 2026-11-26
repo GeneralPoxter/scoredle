@@ -4,11 +4,10 @@
 	"type": "module",
 	"private": true,
 	"scripts": {
-		"register": "tsx src/register.ts",
+		"register": "esbuild src/register.ts --bundle --platform=node --format=esm --loader:.sql=text --external:dotenv | node --input-type=module",
 		"ngrok": "ngrok http 8787",
-		"deploy": "wrangler deploy",
-		"dev": "wrangler dev",
-		"start": "wrangler dev",
+		"deploy": "npm run register && wrangler deploy",
+		"dev": "npm run register && wrangler dev",
 		"cf-typegen": "wrangler types"
 	},
 	"devDependencies": {

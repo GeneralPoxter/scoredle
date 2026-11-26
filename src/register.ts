@@ -4,7 +4,12 @@
  */
 import dotenv from 'dotenv';
 import process from 'node:process';
-import { RouteBases, Routes, type RESTPutAPIApplicationCommandsResult } from 'discord-api-types/v10';
+import {
+    RouteBases,
+    Routes,
+    type RESTPutAPIApplicationCommandsResult,
+} from 'discord-api-types/v10';
+
 import { COMMAND_METADATA } from './commands';
 
 dotenv.config({ path: '.dev.vars' });

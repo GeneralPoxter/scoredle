@@ -1,5 +1,7 @@
 import { InteractionResponseType } from 'discord-api-types/v10';
-import { defineGameCommand } from './command';
+
+import { getGame } from '../games';
+import { defineGameCommand } from './utils';
 
 export const leaderboardCommand = defineGameCommand({
     meta: {
@@ -9,7 +11,7 @@ export const leaderboardCommand = defineGameCommand({
     async execute(game, interaction, env) {
         return {
             type: InteractionResponseType.ChannelMessageWithSource,
-            data: { content: `All-time leaderboard for **${game}**` },
+            data: { content: `All-time leaderboard for **${getGame(game).displayName}**` },
         };
     },
 });
@@ -22,7 +24,7 @@ export const leaderboardDailyCommand = defineGameCommand({
     async execute(game, interaction, env) {
         return {
             type: InteractionResponseType.ChannelMessageWithSource,
-            data: { content: `Daily leaderboard for **${game}**` },
+            data: { content: `Daily leaderboard for **${getGame(game).displayName}**` },
         };
     },
 });

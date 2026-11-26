@@ -1,21 +1,32 @@
 import type { APIInteractionResponse } from 'discord-api-types/v10';
+
 import { helloCommand } from './hello';
+import { configCommand } from './config';
 import { leaderboardCommand, leaderboardDailyCommand } from './leaderboard';
 
-const COMMANDS = [helloCommand, leaderboardCommand, leaderboardDailyCommand] as const;
+// Register new commands here
+const COMMANDS = [
+    helloCommand,
+    configCommand,
+    leaderboardCommand,
+    leaderboardDailyCommand,
+] as const;
 
-type AnyCommand = (typeof COMMANDS)[number];
+type Command = (typeof COMMANDS)[number];
+type CommandName = Command['meta']['name'];
 
-export type CommandKey = AnyCommand['meta']['name'];
-export type ApplicationCommandInteraction = Parameters<AnyCommand['execute']>[0];
+export type ApplicationCommandInteraction = Parameters<Command['execute']>[0];
 
 const COMMAND_MAP = Object.fromEntries(COMMANDS.map((cmd) => [cmd.meta.name, cmd])) as {
-    [K in CommandKey]: Extract<AnyCommand, { meta: { name: K } }>;
+    [Name in CommandName]: Extract<Command, { meta: { name: Name } }>;
 };
 
 export const COMMAND_METADATA = COMMANDS.map((cmd) => cmd.meta);
 
-export async function executeCommand(interaction: ApplicationCommandInteraction, env: Env): Promise<APIInteractionResponse> {
+export async function executeCommand(
+    interaction: ApplicationCommandInteraction,
+    env: Env,
+): Promise<APIInteractionResponse> {
     const command = COMMAND_MAP[interaction.data.name];
     return (
         command.execute as (

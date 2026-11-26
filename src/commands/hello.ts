@@ -1,5 +1,6 @@
 import { InteractionResponseType } from 'discord-api-types/v10';
-import { defineBareCommand } from './command';
+
+import { defineBareCommand } from './utils';
 
 export const helloCommand = defineBareCommand({
     meta: {
