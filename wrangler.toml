@@ -1,0 +1,8 @@
+name = "scordle"
+main = "./src/server.js"
+compatibility_date="2026-11-24"
+
+# [secrets]
+# DISCORD_TOKEN
+# DISCORD_PUBLIC_KEY
+# DISCORD_APPLICATION_ID
