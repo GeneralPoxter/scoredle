@@ -3,9 +3,8 @@
 	"version": "0.0.0",
 	"type": "module",
 	"private": true,
-	"main": "src/server.js",
 	"scripts": {
-		"register": "node src/register.js",
+		"register": "tsx src/register.ts",
 		"ngrok": "ngrok http 8787",
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
@@ -13,10 +12,13 @@
 		"cf-typegen": "wrangler types"
 	},
 	"devDependencies": {
-		"typescript": "^5.5.2",
+		"@types/node": "^26.6.11",
+		"tsx": "^4.23.15",
+		"typescript": "^5.9.3",
 		"wrangler": "^4"
 	},
 	"dependencies": {
+		"discord-api-types": "^0.38.60",
 		"discord-interactions": "^4.4.0",
 		"itty-router": "^5.0.24"
 	}

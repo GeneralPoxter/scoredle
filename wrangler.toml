@@ -1,6 +1,16 @@
-name = "scordle"
-main = "./src/server.js"
+name = "scoredle"
+main = "./src/server.ts"
 compatibility_date="2026-11-24"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "scoredle-db"
+database_id = "808f893f-4627-4ce5-83be-16ce62983f24"
+
+[triggers]
+crons = [
+  "*/1 * * * *"
+]
 
 # [secrets]
 # DISCORD_TOKEN
