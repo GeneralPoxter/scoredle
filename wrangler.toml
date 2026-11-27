@@ -19,6 +19,9 @@ crons = [
   "55 4 * * *"      # post daily leaderboard at EOD
 ]
 
+[observability]
+enabled = true
+
 # [secrets]
 # DISCORD_TOKEN
 # DISCORD_PUBLIC_KEY
