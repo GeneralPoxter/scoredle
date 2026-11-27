@@ -7,23 +7,23 @@ export async function getChannelGames(db: D1Database, channelId: string): Promis
     const { results } = await db
         .prepare(getChannelGamesSql)
         .bind(channelId)
-        .all<{ game: string }>();
+        .all<{ game_id: string }>();
 
-    return results.map((r) => r.game).filter((g): g is GameId => isGame(g));
+    return results.map((r) => r.game_id).filter((g): g is GameId => isGame(g));
 }
 
 export async function setChannelGames(
     db: D1Database,
     guildId: string,
     channelId: string,
-    games: readonly GameId[],
+    gameIds: readonly GameId[],
 ): Promise<void> {
     const disableStmt = db.prepare(disableChannelGamesSql).bind(channelId);
     const enableStmt = db.prepare(enableChannelGameSql);
 
     const statements: D1PreparedStatement[] = [
         disableStmt,
-        ...games.map((game) => enableStmt.bind(guildId, channelId, game)),
+        ...gameIds.map((gameId) => enableStmt.bind(guildId, channelId, gameId)),
     ];
 
     await db.batch(statements);

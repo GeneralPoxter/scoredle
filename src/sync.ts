@@ -3,42 +3,69 @@ import getSyncChannelGamesSql from './db/queries/get_sync_channel_games.sql';
 import { prepareUpsertScore } from './db/scores';
 import { getSyncState, prepareSetSyncState } from './db/sync-state';
 import { getGame, isGame, type GameId } from './games';
+import { snowflakeToFormattedTime } from './utils/time';
 
-const PAGE_SIZE = 100;
-const MAX_SUBREQUESTS_PER_RUN = 45; // Safe for Cloudflare Free plan (50 subrequest limit)
-
-interface ActiveChannelGameRow {
+interface SyncChannelGameRow {
     guild_id: string;
     channel_id: string;
-    game: string;
+    game_id: string;
 }
 
-async function discordGet<T>(route: string, token: string): Promise<T | null> {
-    const res = await fetch(RouteBases.api + route, {
-        headers: { Authorization: `Bot ${token}` },
-    });
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    if (!res.ok) {
-        console.error(`[sync] Discord GET ${route} failed: ${res.status} ${res.statusText}`);
-        return null;
+async function discordGet<T>(
+    route: string,
+    token: string,
+    budget: { remaining: number },
+): Promise<T | null> {
+    while (budget.remaining > 0) {
+        budget.remaining--;
+
+        const res = await fetch(RouteBases.api + route, {
+            headers: { Authorization: `Bot ${token}` },
+        });
+
+        if (res.status === 429) {
+            const retryAfterSec = Number(res.headers.get('Retry-After') ?? '1');
+            const waitMs = Math.ceil(retryAfterSec * 1000) + 100;
+            console.warn(`[sync] Rate limited on ${route}; waiting ${waitMs}ms...`);
+            await sleep(waitMs);
+            continue;
+        }
+
+        if (!res.ok) {
+            console.error(`[sync] Discord GET ${route} failed: ${res.status} ${res.statusText}`);
+            return null;
+        }
+
+        const bucketRemaining = res.headers.get('X-RateLimit-Remaining');
+        const resetAfterSec = res.headers.get('X-RateLimit-Reset-After');
+        if (bucketRemaining === '0' && resetAfterSec) {
+            const waitMs = Math.ceil(Number(resetAfterSec) * 1000) + 50;
+            await sleep(waitMs);
+        }
+
+        return (await res.json()) as T;
     }
 
-    return (await res.json()) as T;
+    return null;
 }
 
 async function syncChannel(
     guildId: string,
     channelId: string,
-    games: readonly GameId[],
+    gameIds: readonly GameId[],
     env: Env,
     budget: { remaining: number },
 ): Promise<void> {
-    if (games.length === 0 || budget.remaining <= 0) return;
+    if (gameIds.length === 0 || budget.remaining <= 0) return;
+
+    const pageSize = Number(env.PAGE_SIZE);
 
     const lastSyncedMessageId = new Map<GameId, string>();
-    for (const game of games) {
-        const id = await getSyncState(env.DB, guildId, channelId, game);
-        lastSyncedMessageId.set(game, id);
+    for (const gameId of gameIds) {
+        const id = await getSyncState(env.DB, guildId, channelId, gameId);
+        lastSyncedMessageId.set(gameId, id);
     }
 
     let oldestId = [...lastSyncedMessageId.values()].reduce((min, id) =>
@@ -49,16 +76,15 @@ async function syncChannel(
     let totalScoresUpserted = 0;
 
     while (budget.remaining > 0) {
-        budget.remaining--;
-
         const params = new URLSearchParams({
             after: oldestId,
-            limit: String(PAGE_SIZE),
+            limit: String(pageSize),
         });
 
         const messages = await discordGet<APIMessage[]>(
             `${Routes.channelMessages(channelId)}?${params.toString()}`,
             env.DISCORD_TOKEN,
+            budget,
         );
 
         if (!messages?.length) break;
@@ -83,21 +109,22 @@ async function syncChannel(
             for (const [game, lastMsgId] of lastMessageIdMap) {
                 if (msgId <= lastMsgId) continue;
 
-                const parsed = getGame(game).parseScore(msg.content);
-                if (!parsed) continue;
-
-                totalScoresUpserted++;
-                statements.push(
-                    prepareUpsertScore(env.DB, {
-                        guildId,
-                        channelId,
-                        userId: msg.author.id,
-                        game,
-                        puzzleId: parsed.puzzleId,
-                        score: parsed.score,
-                        sourceMessageId: msg.id,
-                    }),
-                );
+                const res = getGame(game).parseScores(msg.content);
+                for (const parsed of res) {
+                    totalScoresUpserted++;
+                    statements.push(
+                        prepareUpsertScore(env.DB, {
+                            guildId,
+                            channelId,
+                            userId: msg.author.id,
+                            gameId: game,
+                            puzzleId: parsed.puzzleId,
+                            score: parsed.score,
+                            sourceMessageId: msg.id,
+                            submittedAt: msg.timestamp,
+                        }),
+                    );
+                }
             }
         }
 
@@ -112,12 +139,16 @@ async function syncChannel(
 
         oldestId = newestMessageId;
 
-        if (messages.length < PAGE_SIZE) break;
+        if (messages.length < pageSize) break;
     }
 
     if (totalMessagesFetched > 0) {
+        const cursorSummary = [...lastSyncedMessageId.entries()]
+            .map(([game, id]) => `${game} @ ${snowflakeToFormattedTime(id, env.TIMEZONE)}`)
+            .join(', ');
+
         console.log(
-            `[sync] Channel ${channelId} (${games.join(', ')}): fetched ${totalMessagesFetched} message(s), parsed ${totalScoresUpserted} score(s), lastMessageId=${oldestId}`,
+            `[sync] Channel ${channelId}: fetched ${totalMessagesFetched} message(s), parsed ${totalScoresUpserted} score(s) [${cursorSummary}]`,
         );
     }
 }
@@ -125,41 +156,42 @@ async function syncChannel(
 export async function syncDiscordMessages(env: Env): Promise<void> {
     console.log('[sync] Starting Discord message sync...');
 
-    const { results } = await env.DB.prepare(getSyncChannelGamesSql).all<ActiveChannelGameRow>();
+    const { results } = await env.DB.prepare(getSyncChannelGamesSql).all<SyncChannelGameRow>();
 
     if (!results.length) {
         console.log('[sync] No active channel games configured; skipping.');
         return;
     }
 
-    const byChannel = new Map<string, { guildId: string; channelId: string; games: GameId[] }>();
+    const byChannel = new Map<string, { guildId: string; channelId: string; gameIds: GameId[] }>();
 
     for (const row of results) {
-        if (!isGame(row.game)) continue;
+        if (!isGame(row.game_id)) continue;
         const entry = byChannel.get(row.channel_id) ?? {
             guildId: row.guild_id,
             channelId: row.channel_id,
-            games: [],
+            gameIds: [],
         };
-        entry.games.push(row.game);
+        entry.gameIds.push(row.game_id);
         byChannel.set(row.channel_id, entry);
     }
 
-    console.log(`[sync] Syncing ${byChannel.size} active channel(s)...`);
+    const maxSubrequests = Number(env.MAX_SUBREQUESTS_PER_RUN);
+    console.log(`[sync] Syncing ${byChannel.size} active channel(s) (budget=${maxSubrequests})...`);
 
-    const budget = { remaining: MAX_SUBREQUESTS_PER_RUN };
+    const budget = { remaining: maxSubrequests };
 
-    for (const { guildId, channelId, games } of byChannel.values()) {
+    for (const { guildId, channelId, gameIds } of byChannel.values()) {
         if (budget.remaining <= 0) {
             console.warn(
                 '[sync] Subrequest budget exhausted; remaining channels will continue on next cron run.',
             );
             break;
         }
-        await syncChannel(guildId, channelId, games, env, budget);
+        await syncChannel(guildId, channelId, gameIds, env, budget);
     }
 
     console.log(
-        `[sync] Sync complete (${MAX_SUBREQUESTS_PER_RUN - budget.remaining} Discord API request(s) used).`,
+        `[sync] Sync complete (${maxSubrequests - budget.remaining} Discord API request(s) used).`,
     );
 }

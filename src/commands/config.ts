@@ -4,7 +4,7 @@ import {
     InteractionResponseType,
     MessageFlags,
     PermissionFlagsBits,
-    type APIApplicationCommandInteractionDataStringOption,
+    type APIApplicationCommandInteractionDataSubcommandOption,
     type APIInteractionResponse,
     type APIMessageComponentInteraction,
 } from 'discord-api-types/v10';
@@ -15,26 +15,32 @@ import type { CommandDefinition } from './utils';
 
 export const CONFIG_SELECT_ID = 'config:games';
 
-type PresetOption = Omit<APIApplicationCommandInteractionDataStringOption, 'name' | 'value'> & {
-    name: 'preset';
-    value: 'all' | 'none';
+type ConfigSubcommandName = 'select' | 'enable-all' | 'disable-all';
+
+type ConfigSubcommandOption = Omit<APIApplicationCommandInteractionDataSubcommandOption, 'name'> & {
+    name: ConfigSubcommandName;
 };
 
-export const configCommand: CommandDefinition<'config', [PresetOption]> = {
+export const configCommand: CommandDefinition<'config', [ConfigSubcommandOption]> = {
     meta: {
         name: 'config',
         description: 'Configure which games are enabled in this channel',
         default_member_permissions: PermissionFlagsBits.ManageGuild.toString(),
         options: [
             {
-                name: 'preset',
-                description: 'Quickly enable all or disable all games',
-                type: ApplicationCommandOptionType.String,
-                required: false,
-                choices: [
-                    { name: 'Enable all games', value: 'all' },
-                    { name: 'Disable all games', value: 'none' },
-                ],
+                name: 'select',
+                description: 'Choose which games to track in this channel',
+                type: ApplicationCommandOptionType.Subcommand,
+            },
+            {
+                name: 'enable-all',
+                description: 'Enable all games in this channel',
+                type: ApplicationCommandOptionType.Subcommand,
+            },
+            {
+                name: 'disable-all',
+                description: 'Disable all games in this channel',
+                type: ApplicationCommandOptionType.Subcommand,
             },
         ],
     },
@@ -49,10 +55,10 @@ export const configCommand: CommandDefinition<'config', [PresetOption]> = {
             };
         }
 
-        const preset = interaction.data.options?.[0]?.value;
+        const subcommand = interaction.data.options?.[0]?.name;
 
-        if (preset === 'all' || preset === 'none') {
-            const targetGames = preset === 'all' ? GAME_IDS : [];
+        if (subcommand === 'enable-all' || subcommand === 'disable-all') {
+            const targetGames = subcommand === 'enable-all' ? GAME_IDS : [];
             await setChannelGames(
                 env.DB,
                 interaction.guild_id,
@@ -64,7 +70,7 @@ export const configCommand: CommandDefinition<'config', [PresetOption]> = {
                 type: InteractionResponseType.ChannelMessageWithSource,
                 data: {
                     content:
-                        preset === 'all'
+                        subcommand === 'enable-all'
                             ? `Enabled **all games** (${GAMES.map((g) => g.displayName).join(', ')}) in <#${interaction.channel.id}>.`
                             : `Disabled **all games** in <#${interaction.channel.id}>.`,
                     flags: MessageFlags.Ephemeral,
@@ -72,6 +78,7 @@ export const configCommand: CommandDefinition<'config', [PresetOption]> = {
             };
         }
 
+        // Subcommand: 'select'
         const enabledGames = await getChannelGames(env.DB, interaction.channel.id);
         const enabledSet = new Set(enabledGames);
 

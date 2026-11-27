@@ -3,7 +3,7 @@ import {
     InteractionResponseType,
     MessageFlags,
     type APIApplicationCommandAutocompleteInteraction,
-    type APIApplicationCommandInteractionDataBasicOption,
+    type APIApplicationCommandInteractionDataOption,
     type APIApplicationCommandInteractionDataStringOption,
     type APIChatInputApplicationCommandInteraction,
     type APIInteractionResponse,
@@ -14,7 +14,7 @@ import { getGame, isGame, type GameId } from '../games';
 
 export type CommandInteraction<
     TName extends string = string,
-    TOptions extends readonly APIApplicationCommandInteractionDataBasicOption[] | never = never,
+    TOptions extends readonly APIApplicationCommandInteractionDataOption[] | never = never,
 > = Omit<APIChatInputApplicationCommandInteraction, 'data'> & {
     data: Omit<APIChatInputApplicationCommandInteraction['data'], 'name' | 'options'> & {
         name: TName;
@@ -24,7 +24,7 @@ export type CommandInteraction<
 
 export interface CommandDefinition<
     TName extends string = string,
-    TOptions extends readonly APIApplicationCommandInteractionDataBasicOption[] | never = never,
+    TOptions extends readonly APIApplicationCommandInteractionDataOption[] | never = never,
 > {
     meta: Omit<RESTPostAPIChatInputApplicationCommandsJSONBody, 'name'> & {
         name: TName;
@@ -62,11 +62,18 @@ export type GameCommandOption = Omit<
     value: GameId;
 };
 
+export type GuildCommandInteraction<
+    TName extends string = string,
+    TOptions extends readonly APIApplicationCommandInteractionDataOption[] | never = never,
+> = CommandInteraction<TName, TOptions> & {
+    guild_id: string;
+};
+
 export function defineGameCommand<const TName extends string>(spec: {
     meta: CommandMetadata<TName>;
     execute(
-        game: GameId,
-        interaction: CommandInteraction<TName, [GameCommandOption]>,
+        gameId: GameId,
+        interaction: GuildCommandInteraction<TName, [GameCommandOption]>,
         env: Env,
     ): Promise<APIInteractionResponse> | APIInteractionResponse;
 }): CommandDefinition<TName, [GameCommandOption]> {
@@ -84,29 +91,43 @@ export function defineGameCommand<const TName extends string>(spec: {
             ],
         },
         async execute(interaction, env) {
-            const game = interaction.data.options![0].value;
-            if (!isGame(game)) {
+            if (!interaction.guild_id) {
                 return {
                     type: InteractionResponseType.ChannelMessageWithSource,
                     data: {
-                        content: `Unknown game \`${game ?? ''}\`.`,
+                        content: 'This command can only be used inside a server channel.',
+                        flags: MessageFlags.Ephemeral,
+                    },
+                };
+            }
+
+            const gameId = interaction.data.options![0].value.trim().toLowerCase();
+            if (!isGame(gameId)) {
+                return {
+                    type: InteractionResponseType.ChannelMessageWithSource,
+                    data: {
+                        content: `Unknown game \`${gameId ?? ''}\`.`,
                         flags: MessageFlags.Ephemeral,
                     },
                 };
             }
 
             const enabledGames = await getChannelGames(env.DB, interaction.channel.id);
-            if (!enabledGames.includes(game)) {
+            if (!enabledGames.includes(gameId)) {
                 return {
                     type: InteractionResponseType.ChannelMessageWithSource,
                     data: {
-                        content: `**${getGame(game).displayName}** is not enabled in this channel. Ask an admin to run \`/config\`.`,
+                        content: `**${getGame(gameId).displayName}** is not enabled in this channel. Ask an admin to run \`/config\`.`,
                         flags: MessageFlags.Ephemeral,
                     },
                 };
             }
 
-            return spec.execute(game, interaction, env);
+            return spec.execute(
+                gameId,
+                interaction as GuildCommandInteraction<TName, [GameCommandOption]>,
+                env,
+            );
         },
     };
 }

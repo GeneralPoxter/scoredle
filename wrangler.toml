@@ -7,9 +7,14 @@ binding = "DB"
 database_name = "scoredle-db"
 database_id = "808f893f-4627-4ce5-83be-16ce62983f24"
 
+[vars]
+TIMEZONE = "America/New_York"
+PAGE_SIZE = "100"
+MAX_SUBREQUESTS_PER_RUN = "45"
+
 [triggers]
 crons = [
-  "*/1 * * * *"
+  "*/5 * * * *"
 ]
 
 # [secrets]

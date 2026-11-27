@@ -6,11 +6,11 @@ export async function getSyncState(
     db: D1Database,
     guildId: string,
     channelId: string,
-    game: GameId,
+    gameId: GameId,
 ): Promise<string> {
     const row = await db
         .prepare(getSyncStateSql)
-        .bind(guildId, channelId, game)
+        .bind(guildId, channelId, gameId)
         .first<{ last_synced_message_id: string }>();
 
     return row?.last_synced_message_id ?? '0';
@@ -20,8 +20,8 @@ export function prepareSetSyncState(
     db: D1Database,
     guildId: string,
     channelId: string,
-    game: GameId,
+    gameId: GameId,
     newestMessageId: string,
 ): D1PreparedStatement {
-    return db.prepare(setSyncStateSql).bind(guildId, channelId, game, newestMessageId);
+    return db.prepare(setSyncStateSql).bind(guildId, channelId, gameId, newestMessageId);
 }
