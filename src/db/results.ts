@@ -2,6 +2,7 @@ import upsertScoreSql from './queries/upsert_score.sql';
 import getLeaderboardSql from './queries/get_leaderboard.sql';
 import getDailyLeaderboardSql from './queries/get_daily_leaderboard.sql';
 import type { GameId } from '../games';
+import { toSqliteUtc } from '../utils/time';
 
 export interface ScoreSubmission {
     guildId: string;
@@ -12,11 +13,6 @@ export interface ScoreSubmission {
     score: number;
     sourceMessageId: string;
     submittedAt: string | Date;
-}
-
-function toSqliteUtc(timestamp: string | Date): string {
-    const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
-    return date.toISOString().replace('T', ' ').slice(0, 19);
 }
 
 export function prepareUpsertScore(

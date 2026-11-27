@@ -11,6 +11,7 @@ import {
 import { syncDiscordMessages } from './sync';
 import { executeCommand, type ApplicationCommandInteraction } from './commands';
 import { CONFIG_SELECT_ID, handleConfigSelect } from './commands/config';
+import { postDailyLeaderboards } from './commands/leaderboard';
 import { handleGameAutocomplete } from './commands/utils';
 
 async function verifyDiscordRequest(request: Request, env: Env): Promise<APIInteraction | null> {
@@ -74,11 +75,11 @@ router.all('*', () => error(404));
 export default {
     fetch: router.fetch,
 
-    async scheduled(
-        _controller: ScheduledController,
-        env: Env,
-        ctx: ExecutionContext,
-    ): Promise<void> {
-        ctx.waitUntil(syncDiscordMessages(env));
+    async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+        await syncDiscordMessages(env);
+
+        if (controller.cron === env.DAILY_LEADERBOARD_CRON) {
+            await postDailyLeaderboards(env);
+        }
     },
 } satisfies ExportedHandler<Env>;

@@ -42,6 +42,11 @@ function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
     return asUtc - date.getTime();
 }
 
+export function toSqliteUtc(timestamp: string | Date): string {
+    const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    return date.toISOString().replace('T', ' ').slice(0, 19);
+}
+
 export function getTodayWindowUtc(timeZone: string): {
     startTs: string;
     endTs: string;
@@ -49,7 +54,6 @@ export function getTodayWindowUtc(timeZone: string): {
     const now = new Date();
     const offsetMs = getTimeZoneOffsetMs(now, timeZone);
 
-    // Local wall-clock time shifted into UTC frame to find local midnight
     const localNow = new Date(now.getTime() + offsetMs);
     const localMidnightUtc = Date.UTC(
         localNow.getUTCFullYear(),
@@ -59,8 +63,6 @@ export function getTodayWindowUtc(timeZone: string): {
 
     const startUtc = new Date(localMidnightUtc - offsetMs);
     const endUtc = new Date(startUtc.getTime() + 86_400_000);
-
-    const toSqliteUtc = (d: Date) => d.toISOString().replace('T', ' ').slice(0, 19);
 
     return {
         startTs: toSqliteUtc(startUtc),

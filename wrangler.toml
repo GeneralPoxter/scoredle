@@ -11,10 +11,12 @@ database_id = "808f893f-4627-4ce5-83be-16ce62983f24"
 TIMEZONE = "America/New_York"
 PAGE_SIZE = "100"
 MAX_SUBREQUESTS_PER_RUN = "45"
+DAILY_LEADERBOARD_CRON = "55 4 * * *"
 
 [triggers]
 crons = [
-  "*/5 * * * *"
+  "*/5 * * * *",    # sync every 5 minutes
+  "55 4 * * *"      # post daily leaderboard at EOD
 ]
 
 # [secrets]

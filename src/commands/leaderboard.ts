@@ -1,13 +1,18 @@
 import {
     InteractionResponseType,
     MessageFlags,
+    RouteBases,
+    Routes,
+    type APIEmbed,
     type APIInteractionResponse,
+    type RESTPostAPIChannelMessageJSONBody,
 } from 'discord-api-types/v10';
 
-import { getLeaderboard, getDailyLeaderboard } from '../db/scores';
-import { getGame } from '../games';
-import { defineGameCommand } from './utils';
+import { getDailyLeaderboard, getLeaderboard } from '../db/results';
+import { getActiveChannelGames } from '../db/sync-state';
+import { getGame, type GameId } from '../games';
 import { getTodayWindowUtc } from '../utils/time';
+import { defineGameCommand } from './utils';
 
 const LEADERBOARD_SIZE = 10;
 const MEDALS = ['🥇', '🥈', '🥉'] as const;
@@ -26,7 +31,7 @@ export const leaderboardCommand = defineGameCommand({
         const rows = await getLeaderboard(env.DB, {
             guildId: interaction.guild_id,
             channelId: interaction.channel.id,
-            gameId: gameId,
+            gameId,
             sortDirection: game.sortDirection,
         });
 
@@ -64,6 +69,40 @@ export const leaderboardCommand = defineGameCommand({
     },
 });
 
+export async function buildDailyLeaderboardEmbed(
+    env: Env,
+    guildId: string,
+    channelId: string,
+    gameId: GameId,
+): Promise<APIEmbed | null> {
+    const game = getGame(gameId);
+    const { startTs, endTs } = getTodayWindowUtc(env.TIMEZONE);
+
+    const rows = await getDailyLeaderboard(env.DB, {
+        guildId,
+        channelId,
+        gameId,
+        sortDirection: game.sortDirection,
+        startTs,
+        endTs,
+    });
+
+    if (rows.length === 0) return null;
+
+    const topRows = rows.slice(0, LEADERBOARD_SIZE);
+    const puzzleId = topRows[0].puzzle_id;
+    const lines = topRows.map((row, idx) => {
+        const formatted = game.formatScore(row.score);
+        return `${formatRank(idx)} <@${row.user_id}> — ${formatted}`;
+    });
+
+    return {
+        title: `📅 ${game.displayName} #${puzzleId} — Today's Leaderboard`,
+        description: lines.join('\n'),
+        color: 0x57f287,
+    };
+}
+
 export const leaderboardDailyCommand = defineGameCommand({
     meta: {
         name: 'leaderboard-daily',
@@ -71,18 +110,14 @@ export const leaderboardDailyCommand = defineGameCommand({
     },
     async execute(gameId, interaction, env) {
         const game = getGame(gameId);
-        const { startTs, endTs } = getTodayWindowUtc(env.TIMEZONE || 'America/New_York');
+        const embed = await buildDailyLeaderboardEmbed(
+            env,
+            interaction.guild_id,
+            interaction.channel.id,
+            gameId,
+        );
 
-        const rows = await getDailyLeaderboard(env.DB, {
-            guildId: interaction.guild_id,
-            channelId: interaction.channel.id,
-            gameId: gameId,
-            sortDirection: game.sortDirection,
-            startTs,
-            endTs,
-        });
-
-        if (rows.length === 0) {
+        if (!embed) {
             return {
                 type: InteractionResponseType.ChannelMessageWithSource,
                 data: {
@@ -92,25 +127,54 @@ export const leaderboardDailyCommand = defineGameCommand({
             };
         }
 
-        const topRows = rows.slice(0, LEADERBOARD_SIZE);
-        const puzzleId = topRows[0].puzzle_id;
-        const lines = topRows.map((row, idx) => {
-            const formatted = game.formatScore(row.score);
-            return `${formatRank(idx)} <@${row.user_id}> — ${formatted}`;
-        });
-
         return {
             type: InteractionResponseType.ChannelMessageWithSource,
             data: {
-                embeds: [
-                    {
-                        title: `📅 ${game.displayName} #${puzzleId} — Today's Leaderboard`,
-                        description: lines.join('\n'),
-                        color: 0x57f287,
-                    },
-                ],
+                embeds: [embed],
                 allowed_mentions: { parse: [] },
             },
         } satisfies APIInteractionResponse;
     },
 });
+
+export async function postDailyLeaderboards(env: Env): Promise<void> {
+    console.log('[daily] Posting end-of-day leaderboards...');
+
+    const channels = await getActiveChannelGames(env.DB);
+    if (channels.length === 0) return;
+
+    for (const { guildId, channelId, gameIds } of channels) {
+        const embeds: APIEmbed[] = [];
+
+        for (const gameId of gameIds) {
+            const embed = await buildDailyLeaderboardEmbed(env, guildId, channelId, gameId);
+            if (embed) embeds.push(embed);
+        }
+
+        if (embeds.length === 0) continue;
+
+        const payload: RESTPostAPIChannelMessageJSONBody = {
+            embeds: embeds.slice(0, 10),
+            allowed_mentions: { parse: [] },
+        };
+
+        const res = await fetch(RouteBases.api + Routes.channelMessages(channelId), {
+            method: 'POST',
+            headers: {
+                Authorization: `Bot ${env.DISCORD_TOKEN}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+            console.error(
+                `[daily] Failed to post to channel ${channelId}: ${res.status} ${res.statusText}`,
+            );
+        } else {
+            console.log(
+                `[daily] Posted ${embeds.length} daily leaderboard(s) to channel ${channelId}.`,
+            );
+        }
+    }
+}

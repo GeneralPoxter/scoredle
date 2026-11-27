@@ -1,15 +1,8 @@
 import { RouteBases, Routes, type APIMessage } from 'discord-api-types/v10';
-import getSyncChannelGamesSql from './db/queries/get_sync_channel_games.sql';
-import { prepareUpsertScore } from './db/scores';
-import { getSyncState, prepareSetSyncState } from './db/sync-state';
-import { getGame, isGame, type GameId } from './games';
+import { prepareUpsertScore } from './db/results';
+import { getSyncState, prepareSetSyncState, getActiveChannelGames } from './db/sync-state';
+import { getGame, type GameId } from './games';
 import { snowflakeToFormattedTime } from './utils/time';
-
-interface SyncChannelGameRow {
-    guild_id: string;
-    channel_id: string;
-    game_id: string;
-}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -156,32 +149,20 @@ async function syncChannel(
 export async function syncDiscordMessages(env: Env): Promise<void> {
     console.log('[sync] Starting Discord message sync...');
 
-    const { results } = await env.DB.prepare(getSyncChannelGamesSql).all<SyncChannelGameRow>();
-
-    if (!results.length) {
+    const channels = await getActiveChannelGames(env.DB);
+    if (channels.length === 0) {
         console.log('[sync] No active channel games configured; skipping.');
         return;
     }
 
-    const byChannel = new Map<string, { guildId: string; channelId: string; gameIds: GameId[] }>();
-
-    for (const row of results) {
-        if (!isGame(row.game_id)) continue;
-        const entry = byChannel.get(row.channel_id) ?? {
-            guildId: row.guild_id,
-            channelId: row.channel_id,
-            gameIds: [],
-        };
-        entry.gameIds.push(row.game_id);
-        byChannel.set(row.channel_id, entry);
-    }
-
     const maxSubrequests = Number(env.MAX_SUBREQUESTS_PER_RUN);
-    console.log(`[sync] Syncing ${byChannel.size} active channel(s) (budget=${maxSubrequests})...`);
+    console.log(
+        `[sync] Syncing ${channels.length} active channel(s) (budget=${maxSubrequests})...`,
+    );
 
     const budget = { remaining: maxSubrequests };
 
-    for (const { guildId, channelId, gameIds } of byChannel.values()) {
+    for (const { guildId, channelId, gameIds } of channels) {
         if (budget.remaining <= 0) {
             console.warn(
                 '[sync] Subrequest budget exhausted; remaining channels will continue on next cron run.',

@@ -9,7 +9,7 @@ import {
     type APIInteractionResponse,
     type RESTPostAPIChatInputApplicationCommandsJSONBody,
 } from 'discord-api-types/v10';
-import { getChannelGames } from '../db/channel-games';
+import { getChannelGames } from '../db/sync-state';
 import { getGame, isGame, type GameId } from '../games';
 
 export type CommandInteraction<

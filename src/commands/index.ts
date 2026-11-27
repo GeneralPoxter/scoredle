@@ -1,16 +1,10 @@
 import type { APIInteractionResponse } from 'discord-api-types/v10';
 
-import { helloCommand } from './hello';
 import { configCommand } from './config';
 import { leaderboardCommand, leaderboardDailyCommand } from './leaderboard';
 
 // Register new commands here
-const COMMANDS = [
-    helloCommand,
-    configCommand,
-    leaderboardCommand,
-    leaderboardDailyCommand,
-] as const;
+const COMMANDS = [configCommand, leaderboardCommand, leaderboardDailyCommand] as const;
 
 type Command = (typeof COMMANDS)[number];
 type CommandName = Command['meta']['name'];

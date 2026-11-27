@@ -9,7 +9,7 @@ import {
     type APIMessageComponentInteraction,
 } from 'discord-api-types/v10';
 
-import { getChannelGames, setChannelGames } from '../db/channel-games';
+import { getChannelGames, setChannelGames } from '../db/sync-state';
 import { GAMES, GAME_IDS, getGame, isGame, type GameId } from '../games';
 import type { CommandDefinition } from './utils';
 
